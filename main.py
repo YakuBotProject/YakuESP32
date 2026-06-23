@@ -55,6 +55,9 @@ async def lifespan(_: FastAPI):
         from src.tasks.scheduler import start_scheduler
         start_scheduler()
     except OperationalError as exc:
+        # AÑADE ESTA LÍNEA PARA VER EL ERROR REAL:
+        print(f"\n\n--- DETALLE DEL ERROR DE SUPABASE ---\n{exc}\n-------------------------------------\n")
+        
         if IS_PRODUCTION:
             raise RuntimeError("PostgreSQL no está disponible durante el arranque") from exc
         logger.warning("PostgreSQL no está disponible; los servicios dependientes quedan deshabilitados")
