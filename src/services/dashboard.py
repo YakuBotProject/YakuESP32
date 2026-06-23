@@ -3,7 +3,7 @@ from typing import List
 import pytz
 from sqlalchemy.orm import Session
 
-from ..models.models import (
+from ..db.models import (
     cultivos,
     plantas,
     umbrales_planta,
@@ -343,7 +343,7 @@ def obtener_datos_alertas(db: Session, userId: int, idCultivo: int) -> dict:
         
     # 2. Alertas Activas (estado != 'resuelta')
     alertas_activas_raw = db.query(alertas).join(asignaciones_iot, alertas.id_asignacion == asignaciones_iot.id).filter(
-        alertas.estado != 'resuelta',
+        alertas.estado.in_(("pendiente", "activa")),
         asignaciones_iot.id_cultivo == idCultivo,
         asignaciones_iot.id_usuario == userId
     ).order_by(alertas.fecha.desc()).all()
@@ -561,7 +561,7 @@ def obtener_datos_historico(db: Session, userId: int, idCultivo: int, dias: int 
 
 
 def obtener_datos_ml(db: Session, userId: int, idCultivo: int) -> dict:
-    from ..models.models import cultivos, modelos_ml
+    from ..db.models import cultivos, modelos_ml
     usr_mod = db.query(cultivo_modelo).filter(
         cultivo_modelo.id_usuario == userId,
         cultivo_modelo.id_cultivo == idCultivo
@@ -705,7 +705,7 @@ def obtener_datos_ml(db: Session, userId: int, idCultivo: int) -> dict:
 
 
 def obtener_datos_dashboard_admin(db: Session) -> dict:
-    from ..models.models import usuarios, logs_sistema, cultivos, dispositivos, alertas, riego, predicciones_ml, modelos_ml
+    from ..db.models import usuarios, logs_sistema, cultivos, dispositivos, alertas, riego, predicciones_ml, modelos_ml
     import pytz
     from datetime import datetime, timedelta
 
@@ -718,7 +718,7 @@ def obtener_datos_dashboard_admin(db: Session) -> dict:
     total_dispositivos = db.query(dispositivos).count()
     total_dispositivos_activos = db.query(dispositivos).filter(dispositivos.estado == "asignado").count()
     total_cultivos_activos = db.query(cultivos).filter(cultivos.estado == "activo").count()
-    alertas_pendientes = db.query(alertas).filter(alertas.estado == "pendiente").count()
+    alertas_pendientes = db.query(alertas).filter(alertas.estado.in_(("pendiente", "activa"))).count()
 
     metricas = {
         "total_usuarios": total_usuarios,

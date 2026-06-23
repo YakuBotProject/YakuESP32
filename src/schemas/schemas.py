@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class HumedadSueloModel(BaseModel):
@@ -470,12 +470,26 @@ class UsuarioAdminResponse(BaseModel):
 
 
 class UserRegisterInput(BaseModel):
-    nombre: str
-    apellido: Optional[str] = None
-    correo: str
-    contrasena: str
-    telefono: Optional[str] = None
-    id_rol: Optional[int] = 2
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: str = Field(min_length=2, max_length=100)
+    apellido: Optional[str] = Field(default=None, max_length=100)
+    correo: EmailStr
+    contrasena: str = Field(min_length=10, max_length=128)
+    telefono: Optional[str] = Field(default=None, max_length=20)
+
+    @field_validator("contrasena")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        if not any(char.islower() for char in value) or not any(char.isupper() for char in value):
+            raise ValueError("La contrasena debe incluir mayusculas y minusculas")
+        if not any(char.isdigit() for char in value):
+            raise ValueError("La contrasena debe incluir al menos un numero")
+        return value
+
+
+class AdminUserCreateInput(UserRegisterInput):
+    id_rol: int = Field(ge=1, le=2)
 
 
 class UserRegisterResponse(BaseModel):
@@ -679,4 +693,4 @@ class AdminDashboardSummaryResponse(BaseModel):
     usuarios_filtro: List[UserFilterItem]
     cultivos_filtro: List[CropFilterItem]
 
-
+
