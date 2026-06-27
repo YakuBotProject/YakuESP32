@@ -67,6 +67,12 @@ def require_admin(current_user) -> None:
 
 
 def public_version(version: versiones_firmware) -> dict:
+    release_dir = get_version_dir(version)
+    missing_files = []
+    for item in version.manifiesto.get("segmentos", []):
+        name = Path(str(item.get("nombre", ""))).name
+        if name and not (release_dir / name).is_file():
+            missing_files.append(name)
     return {
         "id": version.id,
         "version": version.version,
@@ -77,15 +83,21 @@ def public_version(version: versiones_firmware) -> dict:
         "descontinuado": version.descontinuado,
         "ubicacion_archivo": version.ubicacion_archivo,
         "manifiesto": version.manifiesto,
+        "archivos_faltantes": missing_files,
         "fecha_registro": version.fecha_registro,
         "fecha_descontinuado": version.fecha_descontinuado,
     }
 
 
-def build_assignment_metric_map(assignments: list[asignaciones_iot]) -> tuple[dict[str, int], list[dict]]:
+def build_assignment_metric_map(assignments: list[asignaciones_iot], device: dispositivos) -> tuple[dict[str, int], list[dict]]:
     metric_map = {}
     assignment_detail = []
     fallback_assignment_id = None
+    device_type_name = (device.tipo.nombre if device.tipo else "").lower()
+    is_water_controller = any(
+        word in device_type_name
+        for word in ("actuador", "nivel", "riego", "tanque")
+    )
 
     for assignment in assignments:
         code = assignment.tipo_metrica.codigo if assignment.tipo_metrica else None
@@ -93,9 +105,11 @@ def build_assignment_metric_map(assignments: list[asignaciones_iot]) -> tuple[di
             category = assignment.componente.modelo.categoria.upper()
             pin_suffix = f"_GPIO{assignment.pin_gpio}" if assignment.pin_gpio is not None else ""
             code = f"{category}{pin_suffix}"
+            if category == "ACTUADOR":
+                is_water_controller = True
             if fallback_assignment_id is None and category == "ACTUADOR":
                 fallback_assignment_id = assignment.id
-        if fallback_assignment_id is None:
+        if fallback_assignment_id is None and is_water_controller:
             fallback_assignment_id = assignment.id
         if code:
             metric_map[code] = assignment.id
@@ -106,7 +120,7 @@ def build_assignment_metric_map(assignments: list[asignaciones_iot]) -> tuple[di
             "id_componente": assignment.id_componente,
         })
 
-    if "NIVEL_AGUA" not in metric_map and fallback_assignment_id is not None:
+    if is_water_controller and "NIVEL_AGUA" not in metric_map and fallback_assignment_id is not None:
         metric_map["NIVEL_AGUA"] = fallback_assignment_id
 
     return metric_map, assignment_detail
@@ -300,7 +314,7 @@ def get_provisioning(
     farmer = db.query(usuarios).filter(usuarios.id_usuario == user_id).first()
     crop = db.query(cultivos).filter(cultivos.id_cultivo == crop_id).first()
 
-    metric_map, assignment_detail = build_assignment_metric_map(assignments)
+    metric_map, assignment_detail = build_assignment_metric_map(assignments, device)
 
     compact_mac = re.sub(r"[^0-9A-F]", "", (device.mac_address or "").upper())
     device_uid = device.client_id_mqtt or (f"YAKU-{compact_mac}" if compact_mac else f"YAKU-DEVICE-{device_id}")

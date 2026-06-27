@@ -23,6 +23,7 @@ class FirmwareVersionResponse(BaseModel):
     descontinuado: bool = False
     ubicacion_archivo: str | None = None
     manifiesto: dict[str, Any]
+    archivos_faltantes: list[str] = Field(default_factory=list)
     fecha_registro: datetime
     fecha_descontinuado: datetime | None = None
 
