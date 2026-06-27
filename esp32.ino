@@ -295,7 +295,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
           inicioValvulaMs = 0;
           Serial.println("🔒 Bomba APAGADA (por desactivacion)");
         } else {
-          Serial.println("Dispositivo activo; sensor de nivel en espera de una orden de riego");
+          Serial.println("Dispositivo activo; capturando nivel de tanque periodicamente");
         }
       }
       if (doc.containsKey("altura_total_cm")) {
@@ -372,7 +372,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
                  mensajeUP == "CAPTURE_ON") {
         funcionamientoActivo = true;
         Serial.println("⚙️ Funcionamiento ACTIVADO por el usuario");
-        Serial.println("Sensor de nivel en espera de una orden de riego");
+        Serial.println("Sensor de nivel capturando periodicamente");
       }
     }
   } else if (topicStr == topicComando) {
@@ -597,7 +597,7 @@ void loop() {
   }
 
   float d = -1.0;
-  if (id_asignacion_proximidad > 0 && (bombaSolicitada || valvulaAbierta)) {
+  if (id_asignacion_proximidad > 0) {
     d = medirDistancia();
     Serial.print("Distancia: ");
     Serial.print(d);
