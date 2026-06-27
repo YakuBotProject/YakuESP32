@@ -12,8 +12,11 @@
 #include <Preferences.h>
 
 // Prototipos de funciones
-void publicarControlAguaMQTT(float distancia_cm, const char* estado_bomba, const char* motivo_cierre = "");
+void publicarControlAguaMQTT(float distancia_cm, const char* estado_bomba, bool valvula_abierta, const char* motivo_cierre = "");
 float medirDistancia();
+void apagarBomba();
+void apagarValvula();
+void recalcularUmbralesTanque();
 
 // ==========================
 // WIFI / MQTT
@@ -33,13 +36,17 @@ String topicControlAgua = "yaku/tanque/datos";
 // ==========================
 #define TRIG_PIN 26
 #define ECHO_PIN 27
-#define RELE_PIN 33
+#define BOMBA_RELE_PIN 33
+#define VALVULA_RELE_PIN 25
 
 // ==========================
 // CONFIGURACION DINAMICA
 // ==========================
 float alturaTotalCm = 50.0;
-float distanciaSinAguaCm = 45.0;
+float distanciaSeguridadCm = 10.0;
+float distanciaSinAguaCm = 40.0;
+float distanciaAbrirValvulaCm = 40.0;
+float distanciaCerrarValvulaCm = 5.0;
 String modoRiego = "manual";
 String topicComando = "yaku/riego/comando";
 
@@ -54,10 +61,16 @@ PubSubClient mqttClient(espClient);
 bool funcionamientoActivo = false;
 bool bombaSolicitada = false;
 bool ultimoEstadoBomba = false;
+bool valvulaAbierta = false;
+bool ultimoEstadoValvula = false;
+bool publicarEstadoInmediato = false;
 unsigned long inicioReleMs = 0;
+unsigned long inicioValvulaMs = 0;
 uint32_t duracionReleSeg = 600;
+uint32_t duracionValvulaMaxSeg = 1800;
 const uint32_t DURACION_RELE_MIN_SEG = 60;
 const uint32_t DURACION_RELE_MAX_SEG = 1800;
+const float PORCENTAJE_CIERRE_VALVULA = 90.0;
 float ultimaDistanciaValida = -1;
 unsigned long ultimoEnvioNivel = 0;
 const unsigned long INTERVALO_ENVIO_NIVEL = 30000; // 30 segundos
@@ -98,22 +111,58 @@ bool configuracionCompleta() {
   return wifiSsid.length() > 0 && wifiPassword.length() > 0 &&
          mqttHost.length() > 0 && mqttPort > 0 &&
          mqttUser.length() > 0 && mqttPassword.length() > 0 &&
-         mqttClientId.length() > 0 && id_asignacion_proximidad > 0;
+         mqttClientId.length() > 0;
+}
+
+void recalcularUmbralesTanque() {
+  distanciaSeguridadCm = constrain(distanciaSeguridadCm, 0.0, alturaTotalCm);
+  distanciaSinAguaCm = max(0.0f, alturaTotalCm - distanciaSeguridadCm);
+  distanciaAbrirValvulaCm = distanciaSinAguaCm;
+  distanciaCerrarValvulaCm = max(0.0f, alturaTotalCm * ((100.0f - PORCENTAJE_CIERRE_VALVULA) / 100.0f));
+}
+
+void imprimirCamposConfiguracionFaltantes() {
+  if (wifiSsid.length() == 0) Serial.println("YAKU_CONFIG_MISSING: wifi.ssid");
+  if (wifiPassword.length() == 0) Serial.println("YAKU_CONFIG_MISSING: wifi.password");
+  if (mqttHost.length() == 0) Serial.println("YAKU_CONFIG_MISSING: mqtt.host");
+  if (mqttPort == 0) Serial.println("YAKU_CONFIG_MISSING: mqtt.port");
+  if (mqttUser.length() == 0) Serial.println("YAKU_CONFIG_MISSING: mqtt.username");
+  if (mqttPassword.length() == 0) Serial.println("YAKU_CONFIG_MISSING: mqtt.password");
+  if (mqttClientId.length() == 0) Serial.println("YAKU_CONFIG_MISSING: device_uid");
 }
 
 bool aplicarProvisionamiento(const String& json) {
-  DynamicJsonDocument doc(2048);
-  DeserializationError jsonError = deserializeJson(doc, json);
+  String payload = json;
+  payload.trim();
+  int inicioJson = payload.indexOf('{');
+  int finJson = payload.lastIndexOf('}');
+  if (inicioJson < 0 || finJson <= inicioJson) {
+    Serial.println("YAKU_CONFIG_JSON_ERROR: NoJsonObject");
+    return false;
+  }
+  payload = payload.substring(inicioJson, finJson + 1);
+
+  DynamicJsonDocument doc(4096);
+  DeserializationError jsonError = deserializeJson(doc, payload);
   if (jsonError) {
     Serial.printf("YAKU_CONFIG_JSON_ERROR: %s\n", jsonError.c_str());
     return false;
   }
-  if (!doc.containsKey("device_uid") || !doc.containsKey("wifi") ||
-      !doc.containsKey("mqtt") || !doc.containsKey("asignaciones")) {
+  bool tieneFormatoAnidado = doc.containsKey("device_uid") && doc.containsKey("wifi") &&
+                             doc.containsKey("mqtt") && doc.containsKey("asignaciones");
+  bool tieneFormatoPlano = doc.containsKey("ssid") || doc.containsKey("wifi_ssid") ||
+                           doc.containsKey("mqtt_user") || doc.containsKey("id_asignacion");
+  if (!tieneFormatoAnidado && !tieneFormatoPlano) {
     Serial.println("YAKU_CONFIG_MISSING_SECTIONS");
     return false;
   }
-  mqttClientId = doc["device_uid"].as<String>();
+  if (doc.containsKey("device_uid")) {
+    mqttClientId = doc["device_uid"].as<String>();
+  } else if (doc.containsKey("mqtt_client_id")) {
+    mqttClientId = doc["mqtt_client_id"].as<String>();
+  } else if (doc.containsKey("client_id")) {
+    mqttClientId = doc["client_id"].as<String>();
+  }
   JsonObject wifi = doc["wifi"];
   JsonObject mqtt = doc["mqtt"];
   JsonObject asig = doc["asignaciones"];
@@ -121,17 +170,42 @@ bool aplicarProvisionamiento(const String& json) {
     if (wifi.containsKey("ssid")) wifiSsid = wifi["ssid"].as<String>();
     if (wifi.containsKey("password")) wifiPassword = wifi["password"].as<String>();
   }
+  if (doc.containsKey("ssid")) wifiSsid = doc["ssid"].as<String>();
+  if (doc.containsKey("wifi_ssid")) wifiSsid = doc["wifi_ssid"].as<String>();
+  if (doc.containsKey("password")) wifiPassword = doc["password"].as<String>();
+  if (doc.containsKey("wifi_password")) wifiPassword = doc["wifi_password"].as<String>();
+  if (doc.containsKey("wifi_pass")) wifiPassword = doc["wifi_pass"].as<String>();
   if (!mqtt.isNull()) {
     if (mqtt.containsKey("host")) mqttHost = mqtt["host"].as<String>();
     mqttPort = mqtt["port"] | mqttPort;
     if (mqtt.containsKey("username")) mqttUser = mqtt["username"].as<String>();
+    if (mqtt.containsKey("user")) mqttUser = mqtt["user"].as<String>();
     if (mqtt.containsKey("password")) mqttPassword = mqtt["password"].as<String>();
     if (mqtt.containsKey("topic_pub") && !mqtt["topic_pub"].isNull()) topicControlAgua = mqtt["topic_pub"].as<String>();
     if (mqtt.containsKey("topic_sub") && !mqtt["topic_sub"].isNull()) topicComando = mqtt["topic_sub"].as<String>();
   }
-  id_asignacion_proximidad = asig["NIVEL_AGUA"] | 0;
+  if (doc.containsKey("mqtt_host")) mqttHost = doc["mqtt_host"].as<String>();
+  if (doc.containsKey("mqtt_port")) mqttPort = doc["mqtt_port"] | mqttPort;
+  if (doc.containsKey("mqtt_user")) mqttUser = doc["mqtt_user"].as<String>();
+  if (doc.containsKey("mqtt_username")) mqttUser = doc["mqtt_username"].as<String>();
+  if (doc.containsKey("mqtt_password")) mqttPassword = doc["mqtt_password"].as<String>();
+  if (doc.containsKey("topic_pub")) topicControlAgua = doc["topic_pub"].as<String>();
+  if (doc.containsKey("topic_sub")) topicComando = doc["topic_sub"].as<String>();
+
+  id_asignacion_proximidad = doc["id_asignacion"] | (asig["NIVEL_AGUA"] | 0);
+  if (!asig.isNull() && id_asignacion_proximidad <= 0) {
+    for (JsonPair kv : asig) {
+      int idAsignacion = kv.value() | 0;
+      if (idAsignacion > 0) {
+        id_asignacion_proximidad = idAsignacion;
+        Serial.printf("YAKU_CONFIG_NIVEL_FALLBACK: %s=%d\n", kv.key().c_str(), id_asignacion_proximidad);
+        break;
+      }
+    }
+  }
   if (!configuracionCompleta()) {
     Serial.println("YAKU_CONFIG_INCOMPLETE");
+    imprimirCamposConfiguracionFaltantes();
     return false;
   }
   guardarConfiguracion();
@@ -208,14 +282,17 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
   if (topicStr == configTopic) {
     // Intentar deserializar JSON
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<768> doc;
     DeserializationError error = deserializeJson(doc, mensaje);
     if (!error) {
       if (doc.containsKey("funcionamiento_activo")) {
         funcionamientoActivo = doc["funcionamiento_activo"];
         Serial.printf("⚙️ Funcionamiento: %s\n", funcionamientoActivo ? "ACTIVO" : "DESACTIVADO");
         if (!funcionamientoActivo) {
-          digitalWrite(RELE_PIN, LOW);
+          digitalWrite(BOMBA_RELE_PIN, LOW);
+          digitalWrite(VALVULA_RELE_PIN, LOW);
+          valvulaAbierta = false;
+          inicioValvulaMs = 0;
           Serial.println("🔒 Bomba APAGADA (por desactivacion)");
         } else {
           Serial.println("Dispositivo activo; sensor de nivel en espera de una orden de riego");
@@ -225,9 +302,32 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
         alturaTotalCm = doc["altura_total_cm"];
         Serial.printf("⚙️ Altura total cm: %.2f\n", alturaTotalCm);
       }
+      if (doc.containsKey("altura_seguridad_cm")) {
+        distanciaSeguridadCm = doc["altura_seguridad_cm"];
+        Serial.printf("Distancia de seguridad cm: %.2f\n", distanciaSeguridadCm);
+      }
+      recalcularUmbralesTanque();
       if (doc.containsKey("distancia_sin_agua_cm")) {
         distanciaSinAguaCm = doc["distancia_sin_agua_cm"];
+        distanciaAbrirValvulaCm = distanciaSinAguaCm;
+        distanciaSeguridadCm = max(0.0f, alturaTotalCm - distanciaSinAguaCm);
         Serial.printf("⚙️ Distancia sin agua cm: %.2f\n", distanciaSinAguaCm);
+      }
+      if (doc.containsKey("distancia_abrir_valvula_cm")) {
+        distanciaAbrirValvulaCm = doc["distancia_abrir_valvula_cm"];
+        Serial.printf("Distancia para abrir valvula cm: %.2f\n", distanciaAbrirValvulaCm);
+      }
+      if (doc.containsKey("distancia_cerrar_valvula_cm")) {
+        distanciaCerrarValvulaCm = doc["distancia_cerrar_valvula_cm"];
+        Serial.printf("Distancia para cerrar valvula cm: %.2f\n", distanciaCerrarValvulaCm);
+      }
+      if (doc.containsKey("duracion_valvula_max_seg")) {
+        duracionValvulaMaxSeg = constrain(
+          doc["duracion_valvula_max_seg"] | duracionValvulaMaxSeg,
+          DURACION_RELE_MIN_SEG,
+          DURACION_RELE_MAX_SEG
+        );
+        Serial.printf("Tiempo maximo de valvula: %lu segundos\n", (unsigned long)duracionValvulaMaxSeg);
       }
       if (doc.containsKey("modo")) {
         modoRiego = doc["modo"].as<String>();
@@ -246,6 +346,16 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
       if (!asig.isNull() && asig.containsKey("NIVEL_AGUA")) {
         id_asignacion_proximidad = asig["NIVEL_AGUA"];
         guardarConfiguracion();
+      } else if (!asig.isNull() && id_asignacion_proximidad <= 0) {
+        for (JsonPair kv : asig) {
+          int idAsignacion = kv.value() | 0;
+          if (idAsignacion > 0) {
+            id_asignacion_proximidad = idAsignacion;
+            guardarConfiguracion();
+            Serial.printf("YAKU_CONFIG_NIVEL_FALLBACK: %s=%d\n", kv.key().c_str(), id_asignacion_proximidad);
+            break;
+          }
+        }
       }
     } else {
       // Fallback para mensajes planos antiguos
@@ -255,7 +365,8 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
           mensajeUP == "CAPTURE_OFF") {
         funcionamientoActivo = false;
         Serial.println("⚙️ Funcionamiento DESACTIVADO por el usuario");
-        digitalWrite(RELE_PIN, LOW);
+        apagarBomba();
+        apagarValvula();
         Serial.println("🔒 Bomba APAGADA (por desactivacion)");
       } else if (mensajeUP == "ACTIVE" || mensajeUP == "1" || mensajeUP == "ON" ||
                  mensajeUP == "CAPTURE_ON") {
@@ -274,6 +385,14 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
       duracionSolicitada = commandDoc["duracion_seg"] | duracionReleSeg;
     }
     accion.toUpperCase();
+
+    if (accion == "CAMBIO_MODO" && commandDoc.containsKey("modo")) {
+      modoRiego = commandDoc["modo"].as<String>();
+      Serial.printf("⚙️ Modo de riego cambiado por MQTT a: %s\n", modoRiego.c_str());
+      publicarEstadoInmediato = true;
+      return;
+    }
+
     if (funcionamientoActivo) {
       if (accion == "ON" || accion == "1" || accion == "HIGH") {
         duracionSolicitada = constrain(
@@ -286,6 +405,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
         }
         duracionReleSeg = duracionSolicitada;
         bombaSolicitada = true;
+        publicarEstadoInmediato = true;
         Serial.printf(
           "%s solicito bomba ON por un maximo de %lu segundos; validando nivel\n",
           modoRiego.c_str(),
@@ -294,8 +414,19 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
       } else if (accion == "OFF" || accion == "0" || accion == "LOW") {
         bombaSolicitada = false;
         inicioReleMs = 0;
-        digitalWrite(RELE_PIN, LOW);
+        digitalWrite(BOMBA_RELE_PIN, LOW);
+        publicarEstadoInmediato = true;
         Serial.printf("%s solicito bomba OFF\n", modoRiego.c_str());
+      } else if (accion == "VALVULA_ON" || accion == "VALVE_ON") {
+        valvulaAbierta = true;
+        inicioValvulaMs = millis();
+        digitalWrite(VALVULA_RELE_PIN, HIGH);
+        publicarEstadoInmediato = true;
+        Serial.println("VALVULA ON (manual)");
+      } else if (accion == "VALVULA_OFF" || accion == "VALVE_OFF") {
+        apagarValvula();
+        publicarEstadoInmediato = true;
+        Serial.println("VALVULA OFF (manual)");
       }
     } else {
       Serial.println("⚠️ Bomba comandada pero el dispositivo está INACTIVO.");
@@ -335,26 +466,28 @@ void conectarMQTT() {
   }
 }
 
-void publicarControlAguaMQTT(float distancia_cm, const char* estado_bomba, const char* motivo_cierre) {
-  char payload[192];
-  if (strcmp(estado_bomba, "OFF") == 0) {
+void publicarControlAguaMQTT(float distancia_cm, const char* estado_bomba, bool valvula_abierta, const char* motivo_cierre) {
+  char payload[256];
+  if (motivo_cierre != nullptr && strlen(motivo_cierre) > 0) {
     snprintf(
       payload,
       sizeof(payload),
-      "{\"id_asignacion\":%d,\"distancia_cm\":%.2f,\"estado_bomba\":\"%s\",\"motivo_cierre\":\"%s\"}",
+      "{\"id_asignacion\":%d,\"distancia_cm\":%.2f,\"estado_bomba\":\"%s\",\"valvula_abierta\":%s,\"motivo_cierre\":\"%s\"}",
       id_asignacion_proximidad,
       distancia_cm,
       estado_bomba,
+      valvula_abierta ? "true" : "false",
       motivo_cierre
     );
   } else {
     snprintf(
       payload,
       sizeof(payload),
-      "{\"id_asignacion\":%d,\"distancia_cm\":%.2f,\"estado_bomba\":\"%s\"}",
+      "{\"id_asignacion\":%d,\"distancia_cm\":%.2f,\"estado_bomba\":\"%s\",\"valvula_abierta\":%s}",
       id_asignacion_proximidad,
       distancia_cm,
-      estado_bomba
+      estado_bomba,
+      valvula_abierta ? "true" : "false"
     );
   }
 
@@ -365,6 +498,18 @@ void publicarControlAguaMQTT(float distancia_cm, const char* estado_bomba, const
   } else {
     Serial.println("Error publicando en MQTT");
   }
+}
+
+void apagarBomba() {
+  bombaSolicitada = false;
+  inicioReleMs = 0;
+  digitalWrite(BOMBA_RELE_PIN, LOW);
+}
+
+void apagarValvula() {
+  valvulaAbierta = false;
+  inicioValvulaMs = 0;
+  digitalWrite(VALVULA_RELE_PIN, LOW);
 }
 
 // ==========================
@@ -395,10 +540,14 @@ void setup() {
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  pinMode(RELE_PIN, OUTPUT);
-  digitalWrite(RELE_PIN, LOW);
+  pinMode(BOMBA_RELE_PIN, OUTPUT);
+  pinMode(VALVULA_RELE_PIN, OUTPUT);
+  digitalWrite(BOMBA_RELE_PIN, LOW);
+  digitalWrite(VALVULA_RELE_PIN, LOW);
   bombaSolicitada = false;
   ultimoEstadoBomba = false;
+  valvulaAbierta = false;
+  ultimoEstadoValvula = false;
   ultimaDistanciaValida = -1;
 
   if (configuracionCompleta()) {
@@ -417,7 +566,7 @@ void setup() {
 void loop() {
   procesarProvisionamientoSerial();
   if (!configuracionCompleta()) {
-    delay(100);
+    delay(1);
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
@@ -431,14 +580,15 @@ void loop() {
   mqttClient.loop();
 
   if (!funcionamientoActivo) {
-    bombaSolicitada = false;
-    inicioReleMs = 0;
-    digitalWrite(RELE_PIN, LOW);
-    if (ultimoEstadoBomba) {
+    apagarBomba();
+    apagarValvula();
+    if (ultimoEstadoBomba || ultimoEstadoValvula) {
       ultimoEstadoBomba = false;
+      ultimoEstadoValvula = false;
       publicarControlAguaMQTT(
         ultimaDistanciaValida > 0 ? ultimaDistanciaValida : 0.0,
         "OFF",
+        false,
         "desactivacion"
       );
     }
@@ -446,46 +596,41 @@ void loop() {
     return;
   }
 
-  // El sensor ultrasonico solo captura mientras existe una solicitud de riego.
-  if (!bombaSolicitada) {
-    inicioReleMs = 0;
-    digitalWrite(RELE_PIN, LOW);
-    if (ultimoEstadoBomba) {
-      ultimoEstadoBomba = false;
-      ultimoEnvioNivel = millis();
-      publicarControlAguaMQTT(
-        ultimaDistanciaValida > 0 ? ultimaDistanciaValida : 0.0,
-        "OFF",
-        "comando"
-      );
+  float d = -1.0;
+  if (id_asignacion_proximidad > 0 && (bombaSolicitada || valvulaAbierta)) {
+    d = medirDistancia();
+    Serial.print("Distancia: ");
+    Serial.print(d);
+    Serial.println(" cm");
+
+    if (d > 0) {
+      ultimaDistanciaValida = d;
     }
-    delay(100);
-    return;
-  }
-
-  float d = medirDistancia();
-
-  Serial.print("Distancia: ");
-  Serial.print(d);
-  Serial.println(" cm");
-
-  if (d > 0) {
-    ultimaDistanciaValida = d;
   }
 
   bool bombaActiva = bombaSolicitada;
-  const char* motivo = "sistema";
+  const char* motivoBomba = "";
+  const char* motivoValvula = "";
 
-  if (d < 0) {
+  if (id_asignacion_proximidad <= 0) {
     bombaActiva = false;
     bombaSolicitada = false;
-    motivo = "sensor_error";
-    Serial.println("BOMBA OFF (sensor sin lectura)");
-  } else if (d >= distanciaSinAguaCm) {
-    bombaActiva = false;
-    bombaSolicitada = false;
-    motivo = "sin_agua";
-    Serial.println("BOMBA OFF (sin agua / seguridad)");
+    motivoBomba = "sensor_no_configurado";
+    apagarValvula();
+    motivoValvula = "sensor_no_configurado";
+    Serial.println("BOMBA/VALVULA OFF (sensor de proximidad no configurado)");
+  } else {
+    if (d < 0) {
+      bombaActiva = false;
+      motivoBomba = "sensor_error";
+      apagarValvula();
+      motivoValvula = "sensor_error";
+      Serial.println("BOMBA OFF (sensor sin lectura)");
+    } else if (d >= distanciaSinAguaCm) {
+      bombaActiva = false;
+      motivoBomba = "sin_agua";
+      Serial.println("BOMBA OFF (sin agua / seguridad)");
+    }
   }
 
   if (bombaActiva) {
@@ -494,35 +639,67 @@ void loop() {
     } else if (millis() - inicioReleMs >= duracionReleSeg * 1000UL) {
       bombaActiva = false;
       bombaSolicitada = false;
-      motivo = "tiempo_maximo";
+      motivoBomba = "tiempo_maximo";
       Serial.println("BOMBA OFF (tiempo maximo del rele alcanzado)");
     }
   }
 
   if (bombaActiva) {
-    digitalWrite(RELE_PIN, HIGH);
+    digitalWrite(BOMBA_RELE_PIN, HIGH);
     Serial.printf("BOMBA ON (Modo: %s)\n", modoRiego.c_str());
   } else {
-    digitalWrite(RELE_PIN, LOW);
+    digitalWrite(BOMBA_RELE_PIN, LOW);
     inicioReleMs = 0;
     Serial.println("BOMBA OFF");
   }
 
-  bool rechazoSeguridad = !bombaActiva && (strcmp(motivo, "sistema") != 0);
-  if (rechazoSeguridad || bombaActiva != ultimoEstadoBomba ||
-      (bombaActiva && millis() - ultimoEnvioNivel >= INTERVALO_ENVIO_NIVEL)) {
+  if (d > 0) {
+    if (!valvulaAbierta && d >= distanciaAbrirValvulaCm) {
+      valvulaAbierta = true;
+      inicioValvulaMs = millis();
+      motivoValvula = "tanque_bajo";
+      Serial.println("VALVULA ON (rellenando tanque)");
+    } else if (valvulaAbierta && d <= distanciaCerrarValvulaCm) {
+      apagarValvula();
+      motivoValvula = "tanque_lleno";
+      Serial.println("VALVULA OFF (tanque lleno)");
+    }
+
+    if (valvulaAbierta && inicioValvulaMs > 0 &&
+        millis() - inicioValvulaMs >= duracionValvulaMaxSeg * 1000UL) {
+      apagarValvula();
+      motivoValvula = "tiempo_maximo_valvula";
+      Serial.println("VALVULA OFF (tiempo maximo de llenado alcanzado)");
+    }
+  }
+
+  digitalWrite(VALVULA_RELE_PIN, valvulaAbierta ? HIGH : LOW);
+
+  bool cambioEstado = bombaActiva != ultimoEstadoBomba || valvulaAbierta != ultimoEstadoValvula;
+  bool envioPeriodico = millis() - ultimoEnvioNivel >= INTERVALO_ENVIO_NIVEL;
+  if (cambioEstado || envioPeriodico || publicarEstadoInmediato) {
+    publicarEstadoInmediato = false;
     ultimoEnvioNivel = millis();
     ultimoEstadoBomba = bombaActiva;
+    ultimoEstadoValvula = valvulaAbierta;
 
     float distanciaParaEnviar = (d > 0) ? d : ultimaDistanciaValida;
+    
+    const char* motivoEnvio = "";
+    if (!bombaActiva && strlen(motivoBomba) > 0) {
+      motivoEnvio = motivoBomba;
+    } else if (!valvulaAbierta && strlen(motivoValvula) > 0) {
+      motivoEnvio = motivoValvula;
+    }
 
-    if (distanciaParaEnviar > 0 || rechazoSeguridad) {
+    if (id_asignacion_proximidad > 0 && (distanciaParaEnviar > 0 || strlen(motivoEnvio) > 0)) {
       publicarControlAguaMQTT(
         distanciaParaEnviar > 0 ? distanciaParaEnviar : 0.0,
         bombaActiva ? "ON" : "OFF",
-        bombaActiva ? "" : motivo
+        valvulaAbierta,
+        motivoEnvio
       );
-    } else {
+    } else if (id_asignacion_proximidad > 0) {
       Serial.println("No se publica MQTT: sensor sin lectura valida");
     }
   }

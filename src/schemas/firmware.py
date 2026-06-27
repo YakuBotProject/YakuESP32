@@ -20,8 +20,11 @@ class FirmwareVersionResponse(BaseModel):
     tipo_dispositivo: str
     descripcion: str | None = None
     publicado: bool
+    descontinuado: bool = False
+    ubicacion_archivo: str | None = None
     manifiesto: dict[str, Any]
     fecha_registro: datetime
+    fecha_descontinuado: datetime | None = None
 
 
 class FirmwareInstallationCreate(BaseModel):

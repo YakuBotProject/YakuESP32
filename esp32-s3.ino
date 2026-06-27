@@ -139,16 +139,22 @@ bool configuracionCompleta() {
   return wifiSsid.length() > 0 && wifiPassword.length() > 0 &&
          mqttHost.length() > 0 && mqttPort > 0 &&
          mqttUser.length() > 0 && mqttPassword.length() > 0 &&
-         mqttClientId.length() > 0 &&
-         id_asignacion_humedad_suelo > 0 &&
-         id_asignacion_humedad_ambiente > 0 &&
-         id_asignacion_temperatura_ambiente > 0 &&
-         id_asignacion_temperatura_suelo > 0;
+         mqttClientId.length() > 0;
 }
 
 bool aplicarProvisionamiento(const String& json) {
-  DynamicJsonDocument doc(2048);
-  DeserializationError jsonError = deserializeJson(doc, json);
+  String payload = json;
+  payload.trim();
+  int inicioJson = payload.indexOf('{');
+  int finJson = payload.lastIndexOf('}');
+  if (inicioJson < 0 || finJson <= inicioJson) {
+    Serial.println("YAKU_CONFIG_JSON_ERROR: NoJsonObject");
+    return false;
+  }
+  payload = payload.substring(inicioJson, finJson + 1);
+
+  DynamicJsonDocument doc(4096);
+  DeserializationError jsonError = deserializeJson(doc, payload);
   if (jsonError) {
     Serial.printf("YAKU_CONFIG_JSON_ERROR: %s\n", jsonError.c_str());
     return false;
@@ -674,5 +680,5 @@ void setup() {
 
 void loop() {
   procesarProvisionamientoSerial();
-  vTaskDelay(50 / portTICK_PERIOD_MS);
+  vTaskDelay(1 / portTICK_PERIOD_MS);
 }

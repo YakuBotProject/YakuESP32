@@ -2180,7 +2180,7 @@ VALUES
         'ESP32',
         'riego',
         'Version inicial del controlador de rele y sensor de proximidad con aprovisionamiento dinamico.',
-        '{"schema_version":1,"version":"1.0.0","chip":"ESP32","tipo_dispositivo":"riego","segmentos":[{"nombre":"esp32.ino.bootloader.bin","direccion":4096,"sha256":"f508dfe30f34c2490ec08caaa96f20dc2853f66a0a92f6fb759b205e82924f29","tamano":25024},{"nombre":"esp32.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32.ino.bin","direccion":65536,"sha256":"1dde6d35eb14f0bb45d9b0f5c0c8458f4062cb3c8cdc30c2707646117965251c","tamano":1026528}]}'::jsonb,
+        '{"schema_version":1,"version":"1.0.0","chip":"ESP32","tipo_dispositivo":"riego","segmentos":[{"nombre":"esp32.ino.bootloader.bin","direccion":4096,"sha256":"f508dfe30f34c2490ec08caaa96f20dc2853f66a0a92f6fb759b205e82924f29","tamano":25024},{"nombre":"esp32.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32.ino.bin","direccion":65536,"sha256":"a903cca0682a62aed6530bfc9727afe3b7b23fe33aa896a3db45f573d4d8729d","tamano":1031440}]}'::jsonb,
         'esp32-riego-1.0.0',
         TRUE,
         1
@@ -2190,7 +2190,7 @@ VALUES
         'ESP32',
         'riego',
         'Agrega temporizador local del rele y comandos MQTT con duracion por evento.',
-        '{"schema_version":1,"version":"1.1.0","chip":"ESP32","tipo_dispositivo":"riego","segmentos":[{"nombre":"esp32.ino.bootloader.bin","direccion":4096,"sha256":"f508dfe30f34c2490ec08caaa96f20dc2853f66a0a92f6fb759b205e82924f29","tamano":25024},{"nombre":"esp32.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32.ino.bin","direccion":65536,"sha256":"35ace85d562af9be091bc3221c7af799b0607e11d4992b656d806b1b392dace6","tamano":1027824}]}'::jsonb,
+        '{"schema_version":1,"version":"1.1.0","chip":"ESP32","tipo_dispositivo":"riego","segmentos":[{"nombre":"esp32.ino.bootloader.bin","direccion":4096,"sha256":"f508dfe30f34c2490ec08caaa96f20dc2853f66a0a92f6fb759b205e82924f29","tamano":25024},{"nombre":"esp32.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32.ino.bin","direccion":65536,"sha256":"a903cca0682a62aed6530bfc9727afe3b7b23fe33aa896a3db45f573d4d8729d","tamano":1031440}]}'::jsonb,
         'esp32-riego-1.1.0',
         TRUE,
         1
@@ -2210,7 +2210,7 @@ VALUES
         'ESP32',
         'riego',
         'Corrige NVS heredada y valida toda la configuracion antes de conectar.',
-        '{"schema_version":1,"version":"1.0.1","chip":"ESP32","tipo_dispositivo":"riego","segmentos":[{"nombre":"esp32.ino.bootloader.bin","direccion":4096,"sha256":"f508dfe30f34c2490ec08caaa96f20dc2853f66a0a92f6fb759b205e82924f29","tamano":25024},{"nombre":"esp32.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32.ino.bin","direccion":65536,"sha256":"27b2e29388a79f3d5b13f40e4c7189480a0ecbd48cf7b0349d56ef23e8a35f87","tamano":1026752}]}'::jsonb,
+        '{"schema_version":1,"version":"1.0.1","chip":"ESP32","tipo_dispositivo":"riego","segmentos":[{"nombre":"esp32.ino.bootloader.bin","direccion":4096,"sha256":"f508dfe30f34c2490ec08caaa96f20dc2853f66a0a92f6fb759b205e82924f29","tamano":25024},{"nombre":"esp32.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32.ino.bin","direccion":65536,"sha256":"a903cca0682a62aed6530bfc9727afe3b7b23fe33aa896a3db45f573d4d8729d","tamano":1031440}]}'::jsonb,
         'esp32-riego-1.0.1',
         TRUE,
         1
@@ -2235,11 +2235,12 @@ INSERT INTO tipos_componente (id, nombre_modelo, categoria, id_tipo_metrica, des
 (2, 'Sensor de Temp/Hum DHT22', 'sensor', NULL, 'Sensor de temperatura y humedad ambiental DHT22.'),
 (4, 'Termómetro DS18B20 Suelo', 'sensor', 4, 'Termómetro de varilla de suelo DS18B20.'),
 (5, 'Sensor Ultrasónico HC-SR04', 'sensor', 5, 'Sensor ultrasónico de distancia para tanques.'),
-(6, 'Módulo de Relé 5V', 'actuador', NULL, 'Módulo de relé electromagnético para bombas o solenoides.'),
-(7, 'Módulo de Batería LiPo 18650', 'bateria', 6, 'Módulo de alimentación y monitoreo por batería LiPo.');
+(6, 'Módulo de Relé 5V', 'actuador', NULL, 'Módulo de relé electromagnético para bombas o solenoides.'),     
+(7, 'Módulo de Relé 12V', 'actuador', NULL, 'Módulo de relé electromagnético para bombas o solenoides.'),                                                                                                                
+(8, 'Módulo de Batería LiPo 18650', 'bateria', 6, 'Módulo de alimentación y monitoreo por batería LiPo.');
 
 -- =========================================================
--- 7. PLANTAS Y CATÁLOGO DE UMBRALES
+-- 7. PLANTAS Y CATÁLOGO DE UMBRALES 
 -- =========================================================
 INSERT INTO plantas (id, nombre, tipo, descripcion) VALUES
 (1, 'Tomates', 'Hortaliza', 'Cultivo de tomate (tomate cherry). Requiere humedad controlada.'),
