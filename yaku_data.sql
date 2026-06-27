@@ -2170,7 +2170,7 @@ VALUES
         'ESP32-S3',
         'sensores',
         'Corrige NVS heredada, validacion de campo y respuesta inmediata a ACTIVE/INACTIVE.',
-        '{"schema_version":1,"version":"1.0.1","chip":"ESP32-S3","tipo_dispositivo":"sensores","segmentos":[{"nombre":"esp32_s3.ino.bootloader.bin","direccion":0,"sha256":"cc521020f118145ddb9841692442976c0feda6c5969147d51fb64dca8e1e497d","tamano":19984},{"nombre":"esp32_s3.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32_s3.ino.bin","direccion":65536,"sha256":"0e45d30b61c5e6f6b2aacdc5c6871081295eb79abe5899204af2331cf994d735","tamano":1032944}]}'::jsonb,
+        '{"schema_version":1,"version":"1.0.1","chip":"ESP32-S3","tipo_dispositivo":"sensores","segmentos":[{"nombre":"esp32_s3.ino.bootloader.bin","direccion":0,"sha256":"cc521020f118145ddb9841692442976c0feda6c5969147d51fb64dca8e1e497d","tamano":19984},{"nombre":"esp32_s3.ino.partitions.bin","direccion":32768,"sha256":"148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1","tamano":3072},{"nombre":"boot_app0.bin","direccion":57344,"sha256":"f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0","tamano":8192},{"nombre":"esp32_s3.ino.bin","direccion":65536,"sha256":"f42617422fddad4566ce88cbbd8f3f38a4bb0a8466888726ae94cf250f717b34","tamano":1033648}]}'::jsonb,
         'esp32-s3-1.0.1',
         'esp32-s3-1.0.1',
         TRUE,

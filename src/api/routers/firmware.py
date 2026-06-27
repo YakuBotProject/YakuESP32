@@ -17,6 +17,7 @@ from ...db.models import (
     asignaciones_iot,
     cultivos,
     dispositivos,
+    fuentes_agua,
     instalaciones_firmware,
     usuarios,
     versiones_firmware,
@@ -124,6 +125,37 @@ def build_assignment_metric_map(assignments: list[asignaciones_iot], device: dis
         metric_map["NIVEL_AGUA"] = fallback_assignment_id
 
     return metric_map, assignment_detail
+
+
+def build_tank_config(assignments: list[asignaciones_iot], db: Session) -> dict[str, float]:
+    source = None
+    for assignment in assignments:
+        if assignment.fuente_agua is not None:
+            source = assignment.fuente_agua
+            break
+    if source is None:
+        source_id = next((item.id_fuente_agua for item in assignments if item.id_fuente_agua is not None), None)
+        if source_id is None:
+            source_id = next(
+                (
+                    item.cultivo.id_fuente_agua
+                    for item in assignments
+                    if item.cultivo is not None and item.cultivo.id_fuente_agua is not None
+                ),
+                None,
+            )
+        if source_id is not None:
+            source = db.query(fuentes_agua).filter(fuentes_agua.id == source_id).first()
+    altura_total_cm = float(source.altura_tanque_cm or 50.0) if source else 50.0
+    distancia_seguridad_cm = float(source.altura_seguridad_cm or 10.0) if source else 10.0
+    distancia_sin_agua_cm = max(0.0, altura_total_cm - distancia_seguridad_cm)
+    return {
+        "altura_total_cm": altura_total_cm,
+        "altura_seguridad_cm": distancia_seguridad_cm,
+        "distancia_sin_agua_cm": distancia_sin_agua_cm,
+        "distancia_abrir_valvula_cm": distancia_sin_agua_cm,
+        "distancia_cerrar_valvula_cm": max(0.0, altura_total_cm * 0.10),
+    }
 
 
 def firmware_sort_key() -> tuple:
@@ -315,6 +347,7 @@ def get_provisioning(
     crop = db.query(cultivos).filter(cultivos.id_cultivo == crop_id).first()
 
     metric_map, assignment_detail = build_assignment_metric_map(assignments, device)
+    tank_config = build_tank_config(assignments, db)
 
     compact_mac = re.sub(r"[^0-9A-F]", "", (device.mac_address or "").upper())
     device_uid = device.client_id_mqtt or (f"YAKU-{compact_mac}" if compact_mac else f"YAKU-DEVICE-{device_id}")
@@ -335,6 +368,8 @@ def get_provisioning(
         "cultivo": crop.nombre_planta if crop else None,
         "asignaciones": metric_map,
         "detalle_asignaciones": assignment_detail,
+        "tanque": tank_config,
+        **tank_config,
         "captura_segundos": 60,
         "cooldown_riego_minutos": 60,
         "mqtt": {
