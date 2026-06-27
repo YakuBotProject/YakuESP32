@@ -446,3 +446,72 @@ def list_installations(
     require_admin(current_user)
     safe_limit = min(max(limit, 1), 100)
     return db.query(instalaciones_firmware).order_by(instalaciones_firmware.fecha_inicio.desc()).limit(safe_limit).all()
+
+
+def sincronizar_firmwares_disco(db: Session) -> None:
+    """
+    Sincroniza los metadatos (tamaño y hash SHA256) de los segmentos de firmware 
+    guardados en la base de datos con los archivos reales presentes en el disco.
+    Esto permite que al desplegar en producción/nube, si hay cambios en los archivos 
+    .bin, la base de datos se actualice automáticamente al arrancar.
+    """
+    import os
+    import hashlib
+    from sqlalchemy.orm.attributes import flag_modified
+
+    logger.info("Iniciando sincronización automática de firmwares en disco...")
+    versions = db.query(versiones_firmware).all()
+    
+    for v in versions:
+        try:
+            dir_path = get_version_dir(v)
+        except Exception:
+            dir_path = ROOT_DIR / "firmware_store" / (v.directorio or "")
+            
+        if not dir_path.exists():
+            logger.warning(f"Directorio de firmware no encontrado: {dir_path}")
+            continue
+            
+        manifest = v.manifiesto
+        if not manifest or "segmentos" not in manifest:
+            continue
+            
+        updated = False
+        for segment in manifest["segmentos"]:
+            name = segment.get("nombre")
+            if not name:
+                continue
+            
+            file_path = dir_path / name
+            if not file_path.exists():
+                alt_name = name.replace("-", "_") if "-" in name else name.replace("_", "-")
+                file_path = dir_path / alt_name
+                
+            if not file_path.exists():
+                logger.warning(f"Segmento de firmware {name} no encontrado en {dir_path}")
+                continue
+                
+            try:
+                content = file_path.read_bytes()
+                new_size = len(content)
+                new_hash = hashlib.sha256(content).hexdigest()
+                
+                if segment.get("tamano") != new_size or segment.get("sha256") != new_hash:
+                    logger.info(f"Sincronizando segmento {name} para versión {v.version} ({v.chip}): {segment.get('tamano')} -> {new_size} bytes")
+                    segment["tamano"] = new_size
+                    segment["sha256"] = new_hash
+                    updated = True
+            except Exception as e:
+                logger.error(f"Error al calcular hash de {file_path}: {e}")
+                
+        if updated:
+            v.manifiesto = manifest
+            flag_modified(v, 'manifiesto')
+            try:
+                db.commit()
+                logger.info(f"Base de datos actualizada con éxito para la versión {v.version} ({v.chip})")
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Error al guardar actualización de firmware {v.version}: {e}")
+                
+    logger.info("Sincronización de firmwares completada.")
