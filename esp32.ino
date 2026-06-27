@@ -34,14 +34,16 @@ String topicControlAgua = "yaku/tanque/datos";
 // ==========================
 // PINES
 // ==========================
-#define TRIG_PIN 26
-#define ECHO_PIN 27
+#define TRIG_PIN 27 // GPIO27
+#define ECHO_PIN 26 // GPIO26
 #define BOMBA_RELE_PIN 33
 #define VALVULA_RELE_PIN 25
 
 // ==========================
 // CONFIGURACION DINAMICA
 // ==========================
+// Valores iniciales de respaldo. Se reemplazan con los datos de la
+// fuente de agua/tanque asociada a las asignaciones del dispositivo.
 float alturaTotalCm = 50.0;
 float distanciaSeguridadCm = 10.0;
 float distanciaSinAguaCm = 40.0;
@@ -89,6 +91,11 @@ void guardarConfiguracion() {
   preferences.putString("topic_pub", topicControlAgua);
   preferences.putString("topic_sub", topicComando);
   preferences.putInt("asig_nivel", id_asignacion_proximidad);
+  preferences.putFloat("altura_total", alturaTotalCm);
+  preferences.putFloat("dist_seg", distanciaSeguridadCm);
+  preferences.putFloat("dist_sin_agua", distanciaSinAguaCm);
+  preferences.putFloat("dist_abrir", distanciaAbrirValvulaCm);
+  preferences.putFloat("dist_cerrar", distanciaCerrarValvulaCm);
   preferences.end();
 }
 
@@ -104,6 +111,11 @@ void cargarConfiguracion() {
   topicControlAgua = preferences.getString("topic_pub", topicControlAgua);
   topicComando = preferences.getString("topic_sub", topicComando);
   id_asignacion_proximidad = preferences.getInt("asig_nivel", 0);
+  alturaTotalCm = preferences.getFloat("altura_total", alturaTotalCm);
+  distanciaSeguridadCm = preferences.getFloat("dist_seg", distanciaSeguridadCm);
+  distanciaSinAguaCm = preferences.getFloat("dist_sin_agua", distanciaSinAguaCm);
+  distanciaAbrirValvulaCm = preferences.getFloat("dist_abrir", distanciaAbrirValvulaCm);
+  distanciaCerrarValvulaCm = preferences.getFloat("dist_cerrar", distanciaCerrarValvulaCm);
   preferences.end();
 }
 
@@ -191,6 +203,22 @@ bool aplicarProvisionamiento(const String& json) {
   if (doc.containsKey("mqtt_password")) mqttPassword = doc["mqtt_password"].as<String>();
   if (doc.containsKey("topic_pub")) topicControlAgua = doc["topic_pub"].as<String>();
   if (doc.containsKey("topic_sub")) topicComando = doc["topic_sub"].as<String>();
+
+  JsonObject tanque = doc["tanque"];
+  if (!tanque.isNull()) {
+    if (tanque.containsKey("altura_total_cm")) alturaTotalCm = tanque["altura_total_cm"];
+    if (tanque.containsKey("altura_seguridad_cm")) distanciaSeguridadCm = tanque["altura_seguridad_cm"];
+    recalcularUmbralesTanque();
+    if (tanque.containsKey("distancia_sin_agua_cm")) distanciaSinAguaCm = tanque["distancia_sin_agua_cm"];
+    if (tanque.containsKey("distancia_abrir_valvula_cm")) distanciaAbrirValvulaCm = tanque["distancia_abrir_valvula_cm"];
+    if (tanque.containsKey("distancia_cerrar_valvula_cm")) distanciaCerrarValvulaCm = tanque["distancia_cerrar_valvula_cm"];
+  }
+  if (doc.containsKey("altura_total_cm")) alturaTotalCm = doc["altura_total_cm"];
+  if (doc.containsKey("altura_seguridad_cm")) distanciaSeguridadCm = doc["altura_seguridad_cm"];
+  recalcularUmbralesTanque();
+  if (doc.containsKey("distancia_sin_agua_cm")) distanciaSinAguaCm = doc["distancia_sin_agua_cm"];
+  if (doc.containsKey("distancia_abrir_valvula_cm")) distanciaAbrirValvulaCm = doc["distancia_abrir_valvula_cm"];
+  if (doc.containsKey("distancia_cerrar_valvula_cm")) distanciaCerrarValvulaCm = doc["distancia_cerrar_valvula_cm"];
 
   id_asignacion_proximidad = doc["id_asignacion"] | (asig["NIVEL_AGUA"] | 0);
   if (!asig.isNull() && id_asignacion_proximidad <= 0) {
@@ -282,7 +310,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
   if (topicStr == configTopic) {
     // Intentar deserializar JSON
-    StaticJsonDocument<768> doc;
+    StaticJsonDocument<1024> doc;
     DeserializationError error = deserializeJson(doc, mensaje);
     if (!error) {
       if (doc.containsKey("funcionamiento_activo")) {
@@ -345,18 +373,17 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
       JsonObject asig = doc["asignaciones"];
       if (!asig.isNull() && asig.containsKey("NIVEL_AGUA")) {
         id_asignacion_proximidad = asig["NIVEL_AGUA"];
-        guardarConfiguracion();
       } else if (!asig.isNull() && id_asignacion_proximidad <= 0) {
         for (JsonPair kv : asig) {
           int idAsignacion = kv.value() | 0;
           if (idAsignacion > 0) {
             id_asignacion_proximidad = idAsignacion;
-            guardarConfiguracion();
             Serial.printf("YAKU_CONFIG_NIVEL_FALLBACK: %s=%d\n", kv.key().c_str(), id_asignacion_proximidad);
             break;
           }
         }
       }
+      guardarConfiguracion();
     } else {
       // Fallback para mensajes planos antiguos
       String mensajeUP = mensaje;
